@@ -113,9 +113,13 @@ if __name__ == '__main__':
         var = raw_input("""
         %s
         %s
-        Type the absolute path to the directory where your server script files live: """ % (logo, frame("Good, your server responded.")))
-        node = Node({}, {"name" : "NodeServer"}, location=var)
-        node
-        nodeClient = NodeCommunicator(node)
+        Type the absolute path to your sqlite database file: """ % (logo, frame("Good, your server responded.")))
+        try:
+            node = Node({}, {"name" : "NodeServer"}, location=var)
+            nodeClient = NodeCommunicator(node)
+        except:
+            raw_input("ERROR: This is not a valid path to an sqlite database file [Press Enter]")
+            clear()
+            continue
         
         
