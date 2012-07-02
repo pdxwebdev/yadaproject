@@ -1,4 +1,4 @@
-import logging, os, json, time, copy, time, datetime, re, urllib, httplib, sys
+import logging, os, json, time, copy, time, datetime, re, urllib, urllib2, httplib, sys
 from base64 import b64encode, b64decode
 from uuid import uuid4
 from yadapy.lib.crypt import encrypt, decrypt
@@ -95,13 +95,9 @@ if __name__ == '__main__':
             clear()
             continue
         try:
-            headers = {"Content-type": "application/x-www-form-urlencoded", "Accept": "text/plain"}
-            conn = httplib.HTTPConnection(host, port)
-            conn.request("POST", "", "", headers)
-            
-            response = conn.getresponse()
-            response = response.read()
-            conn.close()
+            res = urllib2.urlopen('http://%s/' % var)
+            data = res.read()
+            res.close()
             break
         except:
             raw_input("ERROR: Host is inaccessible [Press Enter]")
@@ -117,9 +113,29 @@ if __name__ == '__main__':
         try:
             node = Node({}, {"name" : "NodeServer"}, location=var)
             nodeClient = NodeCommunicator(node)
+            break
         except:
             raw_input("ERROR: This is not a valid path to an sqlite database file [Press Enter]")
             clear()
             continue
         
-        
+    #screen 4
+    try:
+        # Win32
+        from msvcrt import getch
+    except ImportError:
+        # UNIX
+        def getch():
+            import sys, tty, termios
+            fd = sys.stdin.fileno()
+            old = termios.tcgetattr(fd)
+            try:
+                tty.setraw(fd)
+                return sys.stdin.read(1)
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old)
+    while 1:
+        var = getch()
+        print var
+        clear()
+        continue
