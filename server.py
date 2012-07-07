@@ -15,7 +15,7 @@ class TestResource(resource.Resource):
     
     def render_GET(self, request):
         request.setHeader("content-type", "text/plain")
-        return "{}"
+        return json.dumps(self.nodeComm.node.get())
 
     def render_POST(self, request):
         print "initialize server"
