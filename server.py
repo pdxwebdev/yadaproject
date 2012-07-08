@@ -14,8 +14,13 @@ class TestResource(resource.Resource):
         self.nodeComm = nodeComm
     
     def render_GET(self, request):
-        request.setHeader("content-type", "text/plain")
-        return json.dumps(self.nodeComm.node.get())
+        if request.args.get('nolink', '0') == ['1']:
+            return json.dumps(self.nodeComm.node.get())
+        else:
+            returnLinks = ''
+            for hostElement in self.nodeComm.node.get('data/identity/ip_address'):
+                returnLinks += '<a style="text-decoration:none;" href="http://jsonviewer.stack.hu/#http://' + hostElement['address'] + ':' +  hostElement['port']  + '?nolink=1">' + json.dumps(self.nodeComm.node.get()) + "</a>"
+            return returnLinks
 
     def render_POST(self, request):
         print "initialize server"
