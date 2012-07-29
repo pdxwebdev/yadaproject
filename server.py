@@ -1,17 +1,20 @@
 import json, time, unittest, os, sys
 from uuid import uuid4
-from yadapy.sqlite.nodesqlite import Node
-from yadapy.sqlite.yadasqliteserver import YadaServer
+from yadapy.db.mongodb.node import Node
+from yadapy.db.mongodb.manager import YadaServer
 from yadapy.nodecommunicator import NodeCommunicator
+from yadapy.lib.crypt import decrypt
 from twisted.web import server, resource
 from twisted.internet import reactor
+from mongoapi import MongoApi
 
 
 class TestResource(resource.Resource):
     isLeaf = True
     numberRequests = 0
-    def __init__(self, nodeComm):
+    def __init__(self, nodeComm, mongoapi):
         self.nodeComm = nodeComm
+        self.mongoapi = mongoapi
     
     def render_GET(self, request):
         if request.args.get('nolink', '0') == ['1']:
@@ -25,7 +28,6 @@ class TestResource(resource.Resource):
     def render_POST(self, request):
         print "initialize server"
         response = ""
-        
         for i, x in request.args.items():
             try:
                 print "getting the params"
@@ -34,10 +36,16 @@ class TestResource(resource.Resource):
                 break
             except:
                 raise
-            
-        print "calling handlePacket"
-        response = self.nodeComm.handlePacket(inbound)
-            
+        if request.path == '/':
+            print "calling handlePacket"
+            response = self.nodeComm.handlePacket(inbound)
+        else:
+            splitPath = request.path.split('/')
+            method = splitPath[2]
+            friend = self.mongoapi.getProfileFromInbound(inbound)
+            data = decrypt(friend['private_key'], friend['private_key'], inbound['data'])
+            data = json.loads(data)
+            response = getattr(self.mongoapi, method)(friend, data)
         print "response : %s" % response
         request.setHeader("content-type", "text/plain")
         return json.dumps(response)
@@ -52,13 +60,13 @@ if __name__ == '__main__':
     port = argSplit[1]
     try:
         if sys.argv[3] == 'manager':
-            node1 = YadaServer({}, {"name" : "node 1"}, location=sys.argv[2])
+            node1 = YadaServer({}, {"name" : "node 2"})
         else:
-            node1 = Node({}, {"name" : "node 1"}, location=sys.argv[2])
+            node1 = Node({}, {"name" : "node 2"})
     except:
-        node1 = Node({}, {"name" : "node 1"}, location=sys.argv[2])
+        node1 = Node({}, {"name" : "node 2"})
     node1.addIPAddress(host, port)
     node1.save()
     nodeComm1 = NodeCommunicator(node1)
-    reactor.listenTCP(int(port), server.Site(TestResource(nodeComm1)))
+    reactor.listenTCP(int(port), server.Site(TestResource(nodeComm1, MongoApi())))
     reactor.run()
