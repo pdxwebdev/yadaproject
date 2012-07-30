@@ -17,6 +17,11 @@ class TestResource(resource.Resource):
         self.mongoapi = mongoapi
     
     def render_GET(self, request):
+        splitPath = request.path.split('/')
+        method = splitPath[2]
+        if method == 'search':
+            response = self.search(splitPath[3], splitPath[4])
+            return json.dumps(response)
         if request.args.get('nolink', '0') == ['1']:
             return json.dumps(self.nodeComm.node.get())
         else:
@@ -49,6 +54,24 @@ class TestResource(resource.Resource):
         print "response : %s" % response
         request.setHeader("content-type", "text/plain")
         return json.dumps(response)
+    
+    def search(self, term=None, public_key=None):
+        results = []
+        excludeKeys = []
+        results = self.performSearch(term)
+        if public_key:
+            for index, result in enumerate(results):
+                results[index]['source_indexer_key'] = public_key
+        return results
+    
+    def performSearch(self, term, excludeKeys=[]):
+        results = [];
+        for x in self.nodeComm.node.get('data/friends'):
+            if 'name' in x['data']['identity']:
+                if x['data']['identity']['name'].lower() in term.lower() or term.lower() in x['data']['identity']['name'].lower():
+                    if x['data']['identity']['name'].lower()!="":
+                        results.append(x)
+        return results
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
