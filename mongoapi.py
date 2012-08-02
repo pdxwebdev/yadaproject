@@ -4,12 +4,16 @@ from yadapy.lib.crypt import decrypt, encrypt
 from pymongo import Connection, code
 from base64 import b64encode, b64decode
 from yadapy.db.mongodb.node import Node
+from yadapy.db.mongodb.manager import YadaServer
 from yadapy.nodecommunicator import NodeCommunicator
+from yadapy.db.mongodb.lib.jsonencoder import JsonEncoder
 
 
 
-class MongoApi:
-    
+class MongoApi(object):
+    def __init__(self, nodeComm):
+        self.nodeComm = nodeComm
+        
     def loadInboundJson(self, request):
             jsonDict = {}
             try:
@@ -32,7 +36,7 @@ class MongoApi:
         
 
     def Ping(self, data, decrypted):
-        return '{"status":"ok"}' 
+        return {"status":"ok"}
     
     
     def getCounts(self, data, decrypted):
@@ -170,7 +174,7 @@ class MongoApi:
                             }
                         }]
                     })
-        return json.dumps({'friends' : friend['result'], 'requestType' : 'getFriends'})
+        return {'friends' : friend['result'], 'requestType' : 'getFriends'}
     
     
     def getFriend(self, data, decrypted):
@@ -207,7 +211,7 @@ class MongoApi:
         if friend['result']:
             return friend['result'][0]['friend']
         else:
-            return '{}'
+            return {}
     
     
     def getThreads(self, data, decrypted):
@@ -326,7 +330,7 @@ class MongoApi:
                     })
         for i, r in enumerate(posts['result']):
             finalPosts.append(r)
-        return json.dumps({'threads':[{'thread_id': x['_id'], 'public_key' : x['public_key'], 'name' : x['name'], 'subject' : x['subject'], 'guid' : x['guid'], 'timestamp': float(x['timestamp'])} for i, x in enumerate(finalPosts)], 'requestType' : 'getThreads'})
+        return {'threads':[{'thread_id': x['_id'], 'public_key' : x['public_key'], 'name' : x['name'], 'subject' : x['subject'], 'guid' : x['guid'], 'timestamp': float(x['timestamp'])} for i, x in enumerate(finalPosts)], 'requestType' : 'getThreads'}
         
     
     def getThread(self, data, decrypted):
@@ -460,11 +464,11 @@ class MongoApi:
                          ]
                     })['result']
         
-        
+        """
         thread_id = decrypted['thread_id']
         for friend in friendOfIndexerQuery:
             if 'type' in friend['data']:
-                dataToSend = '{"method" : "GET", "public_key" : "%s", "data" : "%s"}' %(friend['public_key'], encrypt(friend['private_key'], friend['private_key'], json.dumps({'query':'messages', 'thread_id':thread_id,'data':{'friends':[{'public_key':x['public_key']} for x in friendOfIndexerQuery]}}, cls=JSONEncoder)))
+                dataToSend = '{"method" : "GET", "public_key" : "%s", "data" : "%s"}' %(friend['public_key'], encrypt(friend['private_key'], friend['private_key'], json.dumps({'query':'messages', 'thread_id':thread_id,'data':{'friends':[{'public_key':x['public_key']} for x in friendOfIndexerQuery]}}, cls=JsonEncoder)))
                 responseDecoded = self.queryIndexer(dataToSend, friend, data)
                 for post in responseDecoded:
                     post['timestamp'] = int(round(float(post['timestamp']),0))
@@ -472,7 +476,8 @@ class MongoApi:
                     if not post['guid'] in guids_added:
                         posts.extend(post)
                         guids_added.append(post['guid'])
-        return json.dumps({'thread':posts})
+        """
+        return {'thread':posts}
     
     
     def getStatus(self, data, decrypted):
@@ -489,7 +494,7 @@ class MongoApi:
                     dict['public_key'] = friend['public_key']
                     posts.append(dict)
         
-        return json.dumps({'status':posts[0:10], 'requestType':'getStatus'})
+        return {'status':posts[0:10], 'requestType':'getStatus'}
     
     
     def getFriendRequests(self, data, decrypted):
@@ -590,10 +595,9 @@ class MongoApi:
                         },
                     ]
                 })['result'][0]
-        self.stripIdentityAndFriendsForProtocolV1(friend['friendRequest'])
-        return json.dumps(friend['friendRequest'])
-        
-        return "{}"
+        friendNode = Node(friend['friendRequest'])
+        friendNode.stripIdentityAndFriendsForProtocolV1()
+        return friendNode.get()
     
     
     def getIdentity(self, data, decrypted):
@@ -602,15 +606,11 @@ class MongoApi:
     
     
     def postMessage(self, data, decrypted):
-        node = Node(public_key = data['public_key'])
-        node.addMessage(decrypted)
-        node.save()
         friends_indexed = []
         connection = Connection('localhost',27021)
         db = connection.yadaserver
         data = Node(public_key = data['public_key'])
-        nodeComm = NodeCommunicator(data)
-        nodeComm.sendMessage(pub_keys=decrypted['public_key'], subject=decrypted['subject'], message=decrypted['message'], thread_id=decrypted['thread_id'])
+        self.nodeComm.sendMessage(fromNode=data, pub_keys=decrypted['public_key'], subject=decrypted['subject'], message=decrypted['message'], thread_id=decrypted['thread_id'])
         
         """
         selectedFriends = {}
@@ -622,7 +622,7 @@ class MongoApi:
             data['private_key'] = selectedFriends[friend]['private_key']
             hostedUserUpdate({"method" : "POST", "public_key" :friend, "data" : encrypt(selectedFriends[friend]['private_key'], selectedFriends[friend]['private_key'], json.dumps(data, cls=MongoEncoder))})
         """
-        return "{}"
+        return {}
     
     
     def postStatus(self, data, decrypted):
@@ -642,14 +642,14 @@ class MongoApi:
             except:
                 pass
         """
-        return "{}"
+        return {}
         
     
     def postFriend(self, data, decrypted):
         node = Node(public_key = data['public_key'])
         node.addFriend(decrypted)
         node.save()
-        return "{}"
+        return {}
     
     
     def postIdentity(self, data, decrypted):
@@ -659,4 +659,4 @@ class MongoApi:
         node = Node(public_key = data['public_key'])
         node.sync(decrypted)
         node.save()
-        return "{}"
+        return {}

@@ -91,5 +91,5 @@ if __name__ == '__main__':
     node1.addIPAddress(host, port)
     node1.save()
     nodeComm1 = NodeCommunicator(node1)
-    reactor.listenTCP(int(port), server.Site(TestResource(nodeComm1, MongoApi())))
+    reactor.listenTCP(int(port), server.Site(TestResource(nodeComm1, MongoApi(nodeComm1))))
     reactor.run()
