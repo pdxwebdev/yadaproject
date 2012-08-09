@@ -5,7 +5,7 @@ from yadapy.db.mongodb.manager import YadaServer
 from yadapy.nodecommunicator import NodeCommunicator
 from yadapy.lib.crypt import decrypt
 from twisted.web import server, resource
-from twisted.internet import reactor
+from twisted.internet import reactor, task
 from mongoapi import MongoApi
 
 
@@ -18,16 +18,21 @@ class TestResource(resource.Resource):
     
     def render_GET(self, request):
         splitPath = request.path.split('/')
-        method = splitPath[2]
-        if method == 'search':
-            response = self.search(splitPath[3], splitPath[4])
-            return json.dumps(response)
+        method = False
+        if len(splitPath) > 2:
+            method = splitPath[2]
+            if method == 'search':
+                response = self.search(splitPath[3], splitPath[4])
+                return json.dumps(response)
         if request.args.get('nolink', '0') == ['1']:
             return json.dumps(self.nodeComm.node.get())
+        elif request.args.get('hostandport', None) != None:
+            self.nodeComm.requestFriend(request.args.get('hostandport', '0')[0])
         else:
             returnLinks = ''
             for hostElement in self.nodeComm.node.get('data/identity/ip_address'):
                 returnLinks += '<a style="text-decoration:none;" href="http://jsonviewer.stack.hu/#http://' + hostElement['address'] + ':' +  hostElement['port']  + '?nolink=1">' + json.dumps(self.nodeComm.node.get()) + "</a>"
+            returnLinks += '<form action="" method="GET"><input type="text" name="hostandport" /><input type="submit" value="send request" /></form>'
             return returnLinks
 
     def render_POST(self, request):
@@ -71,7 +76,17 @@ class TestResource(resource.Resource):
                 if x['data']['identity']['name'].lower() in term.lower() or term.lower() in x['data']['identity']['name'].lower():
                     if x['data']['identity']['name'].lower()!="":
                         results.append(x)
+            for z in x['data']['friends']:
+                if 'data' in z:
+                    if 'identity' in z['data']:
+                        if 'name' in z['data']['identity']:
+                            if z['data']['identity']['name'].lower() in term.lower() or term.lower() in z['data']['identity']['name'].lower():
+                                if z['data']['identity']['name'].lower()!="":
+                                    results.append(z)
         return results
+    def syncAllFriends(self):
+        for x in self.nodeComm.node.get('data/friends'):
+            self.nodeComm.updateRelationship(Node(x))
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
@@ -91,5 +106,8 @@ if __name__ == '__main__':
     node1.addIPAddress(host, port)
     node1.save()
     nodeComm1 = NodeCommunicator(node1)
-    reactor.listenTCP(int(port), server.Site(TestResource(nodeComm1, MongoApi(nodeComm1))))
+    tr = TestResource(nodeComm1, MongoApi(nodeComm1))
+    l = task.LoopingCall(tr.syncAllFriends)
+    l.start(60)
+    reactor.listenTCP(int(port), server.Site(tr))
     reactor.run()

@@ -1,7 +1,7 @@
 import json
 from uuid import uuid4
 from yadapy.lib.crypt import decrypt, encrypt
-from pymongo import Connection, code
+from pymongo import Connection
 from base64 import b64encode, b64decode
 from yadapy.db.mongodb.node import Node
 from yadapy.db.mongodb.manager import YadaServer
@@ -534,8 +534,8 @@ class MongoApi(object):
                         {
                             "$project" : {
                                           "public_key" : "$friend.public_key",
-                                          "routed_public_key" :"$friend.data.routed_friend_requests.routed_public_key",
                                           "request_public_key" :"$friend.data.routed_friend_requests.public_key",
+                                          "routed_public_key" :"$friend.data.routed_friend_requests.routed_public_key",
                                           "name" : "$friend.data.routed_friend_requests.data.identity.name"
                                         }
                         },
@@ -610,7 +610,12 @@ class MongoApi(object):
         connection = Connection('localhost',27021)
         db = connection.yadaserver
         data = Node(public_key = data['public_key'])
-        self.nodeComm.sendMessage(fromNode=data, pub_keys=decrypted['public_key'], subject=decrypted['subject'], message=decrypted['message'], thread_id=decrypted['thread_id'])
+        dataNodeComm = NodeCommunicator(data, self.nodeComm.node)
+        try:
+            message = b64decode(decrypted['message'])
+        except:
+            message = decrypted['message']
+        dataNodeComm.sendMessage(pub_keys=decrypted['public_key'], subject=decrypted['subject'], message=message, thread_id=decrypted['thread_id'])
         
         """
         selectedFriends = {}
