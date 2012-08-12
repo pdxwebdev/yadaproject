@@ -6,7 +6,7 @@ from base64 import b64encode, b64decode
 from yadapy.db.mongodb.node import Node
 from yadapy.db.mongodb.manager import YadaServer
 from yadapy.nodecommunicator import NodeCommunicator
-from yadapy.db.mongodb.lib.jsonencoder import JsonEncoder
+from yadapy.db.mongodb.lib.jsonencoder import MongoEncoder
 
 
 
@@ -86,9 +86,39 @@ class MongoApi(object):
                         },
                     ]
                 })
+            localFriendRequest = db.command(
+                {
+                    "aggregate" : "identities", "pipeline" : [
+                        {
+                            "$match" : {
+                                "public_key" : data['public_key']
+                            }
+                        },
+                        {
+                            "$match" : {
+                                "friend_requests" : { "$not" : {"$size" : 0}}
+                            }
+                        },
+                        {
+                            "$project" : {
+                                "friend_requests" : "$friend_requests",
+                            }
+                        },
+                        {
+                            "$project" : {
+                                          "public_keym" :"$public_key",
+                                          "request_public_keym" : "$friend_requests.public_key",
+                                        }
+                        },
+                    ]
+                })
             #this is a heck because aggregation framework wont support matching the public_key with routed_public_key
             for i, r in enumerate(friend['result']):
                 if 'routed_public_keym' in r and r['routed_public_keym']==r['public_keym'] and not r['request_public_keym'] in friendRequestPublicKeys:
+                    friend_requestCount+=1
+            
+            for i, r in enumerate(localFriendRequest['result']):
+                if 'request_public_keym' in r and not r['request_public_keym'] in friendRequestPublicKeys:
                     friend_requestCount+=1
             
             message = db.command(
@@ -503,48 +533,79 @@ class MongoApi(object):
         db = connection.yadaserver
         ignoredRequests = decrypted['ignoredRequests']
         friend = db.command(
-                {
-                    "aggregate" : "identities", "pipeline" : [
-                        {
-                            "$match" : {
-                                "public_key" : data['public_key']
-                            }
-                        },
-                        {
-                            "$match" : {
-                                "data.friends" : { "$not" : {"$size" : 0}}
-                            }
-                        },
-                        {
-                            "$project" : {
-                                "friend" : "$data.friends",
-                            }
-                        },
-                        {
-                            "$unwind" : "$friend"
-                         },
-                        {
-                            "$match" : {
-                                "friend.data.routed_friend_requests" : { "$not" : {"$size" : 0}}
-                            }
-                        },
-                        {
-                            "$unwind" : "$friend.data.routed_friend_requests"
-                        },
-                        {
-                            "$project" : {
-                                          "public_key" : "$friend.public_key",
-                                          "request_public_key" :"$friend.data.routed_friend_requests.public_key",
-                                          "routed_public_key" :"$friend.data.routed_friend_requests.routed_public_key",
-                                          "name" : "$friend.data.routed_friend_requests.data.identity.name"
-                                        }
-                        },
-                    ]
-                })['result']
+            {
+                "aggregate" : "identities", "pipeline" : [
+                    {
+                        "$match" : {
+                            "public_key" : data['public_key']
+                        }
+                    },
+                    {
+                        "$match" : {
+                            "data.friends" : { "$not" : {"$size" : 0}}
+                        }
+                    },
+                    {
+                        "$project" : {
+                            "friend" : "$data.friends",
+                        }
+                    },
+                    {
+                        "$unwind" : "$friend"
+                     },
+                    {
+                        "$match" : {
+                            "friend.data.routed_friend_requests" : { "$not" : {"$size" : 0}}
+                        }
+                    },
+                    {
+                        "$unwind" : "$friend.data.routed_friend_requests"
+                    },
+                    {
+                        "$project" : {
+                                      "public_key" : "$friend.public_key",
+                                      "request_public_key" :"$friend.data.routed_friend_requests.public_key",
+                                      "routed_public_key" :"$friend.data.routed_friend_requests.routed_public_key",
+                                      "name" : "$friend.data.routed_friend_requests.data.identity.name"
+                                    }
+                    },
+                ]
+            })['result']
+                
+        localFriendRequest = db.command(
+            {
+                "aggregate" : "identities", "pipeline" : [
+                    {
+                        "$match" : {
+                            "public_key" : data['public_key']
+                        }
+                    },
+                    {
+                        "$match" : {
+                            "friend_requests" : { "$not" : {"$size" : 0}}
+                        }
+                    },
+                    {
+                        "$unwind" : "$friend_requests"
+                     },
+                    {
+                        "$project" : {
+                                      "public_key" :"$public_key",
+                                      "request_public_key" : "$friend_requests.public_key",
+                                      "name" : "$friend_requests.data.identity.name"
+                                    }
+                    },
+                ]
+            })['result']
          
         for request in friend:
             if 'routed_public_key' in request and request['routed_public_key']==request['public_key'] and not request['request_public_key'] in ignoredRequests:
                 posts.append({'public_key' : request['request_public_key'], 'name' : request['name']})
+                
+        for request in localFriendRequest:
+            if not request['request_public_key'] in ignoredRequests:
+                posts.append({'public_key' : request['request_public_key'], 'name' : request['name']})
+                
         return {'friend_requests':posts, 'requestType':'getFriendRequests'}
     
     
@@ -594,7 +655,42 @@ class MongoApi(object):
                                         }
                         },
                     ]
-                })['result'][0]
+                })['result']
+                
+        localFriendRequest = db.command(
+            {
+                "aggregate" : "identities", "pipeline" : [
+                    {
+                        "$match" : {
+                            "public_key" : data['public_key']
+                        }
+                    },
+                    {
+                        "$match" : {
+                            "friend_requests" : { "$not" : {"$size" : 0}}
+                        }
+                    },
+                    {
+                        "$unwind" : "$friend_requests"
+                     },
+                    {
+                        "$match" : {
+                            "friend_requests.public_key" : decrypted['public_key']
+                        }
+                    },
+                    {
+                        "$project" : {
+                                      "request_public_key" : "$friend_requests.public_key",
+                                      "friendRequest" : "$friend_requests"
+                                    }
+                    },
+                ]
+            })['result']
+            
+        try:
+            friend = friend[0]
+        except:
+            friend = localFriendRequest[0]
         friendNode = Node(friend['friendRequest'])
         friendNode.stripIdentityAndFriendsForProtocolV1()
         return friendNode.get()
@@ -652,7 +748,16 @@ class MongoApi(object):
     
     def postFriend(self, data, decrypted):
         node = Node(public_key = data['public_key'])
-        node.addFriend(decrypted)
+        if 'messages' not in decrypted['data']:
+            decrypted['data']['messages'] = []
+        if 'friends' not in decrypted['data']:
+            decrypted['data']['friends'] = []
+        if 'public_key' not in decrypted:
+            decrypted['public_key'] = []
+        if 'private_key' not in decrypted:
+            decrypted['private_key'] = []
+        friend = Node(decrypted)
+        node.addFriend(friend.get())
         node.save()
         return {}
     

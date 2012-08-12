@@ -1,10 +1,12 @@
 import json, time, unittest, os, sys
 from uuid import uuid4
+from pymongo import Connection
 from yadapy.db.mongodb.node import Node
 from yadapy.db.mongodb.manager import YadaServer
 from yadapy.nodecommunicator import NodeCommunicator
 from yadapy.lib.crypt import decrypt
 from twisted.web import server, resource
+from twisted.web.util import redirectTo
 from twisted.internet import reactor, task
 from mongoapi import MongoApi
 
@@ -28,12 +30,13 @@ class TestResource(resource.Resource):
             return json.dumps(self.nodeComm.node.get())
         elif request.args.get('hostandport', None) != None:
             self.nodeComm.requestFriend(request.args.get('hostandport', '0')[0])
+            return redirectTo('/?friendRequestSuccess=1', request)
         else:
-            returnLinks = ''
+            returnLinks = '<pre>'
             for hostElement in self.nodeComm.node.get('data/identity/ip_address'):
-                returnLinks += '<a style="text-decoration:none;" href="http://jsonviewer.stack.hu/#http://' + hostElement['address'] + ':' +  hostElement['port']  + '?nolink=1">' + json.dumps(self.nodeComm.node.get()) + "</a>"
-            returnLinks += '<form action="" method="GET"><input type="text" name="hostandport" /><input type="submit" value="send request" /></form>'
-            return returnLinks
+                returnLinks += '<iframe height="800" width="800" style="text-decoration:none;" src="http://jsonviewer.stack.hu/#http://' + hostElement['address'] + ':' +  hostElement['port']  + '?nolink=1"></iframe>'
+            returnLinks += '</pre>Send Friend Request to another manager: <form action="" method="GET"><input type="text" name="hostandport" />(ie. 192.168.1.100:42000 or manager.website.com:42000<br><input type="submit" value="send request" /></form>'
+            return str(returnLinks)
 
     def render_POST(self, request):
         print "initialize server"
@@ -42,7 +45,6 @@ class TestResource(resource.Resource):
             try:
                 print "getting the params"
                 inbound = json.loads(x[0])
-                print "inbound : %s" % x[0]
                 break
             except:
                 raise
@@ -53,40 +55,50 @@ class TestResource(resource.Resource):
             splitPath = request.path.split('/')
             method = splitPath[2]
             friend = self.mongoapi.getProfileFromInbound(inbound)
-            data = decrypt(friend['private_key'], friend['private_key'], inbound['data'])
-            data = json.loads(data)
-            response = getattr(self.mongoapi, method)(friend, data)
-        print "response : %s" % response
+            if friend:
+                data = decrypt(friend['private_key'], friend['private_key'], inbound['data'])
+                data = json.loads(data)
+                response = getattr(self.mongoapi, method)(friend, data)
+            else:
+                response = ""
         request.setHeader("content-type", "text/plain")
         return json.dumps(response)
     
     def search(self, term=None, public_key=None):
         results = []
         excludeKeys = []
-        results = self.performSearch(term)
-        if public_key:
-            for index, result in enumerate(results):
-                results[index]['source_indexer_key'] = public_key
+        results = self.performSearch(term, source_indexer_key=public_key)
         return results
     
-    def performSearch(self, term, excludeKeys=[]):
-        results = [];
+    def performSearch(self, term, excludeKeys=[], source_indexer_key=""):
+        results = []
+        keys = []
         for x in self.nodeComm.node.get('data/friends'):
             if 'name' in x['data']['identity']:
                 if x['data']['identity']['name'].lower() in term.lower() or term.lower() in x['data']['identity']['name'].lower():
                     if x['data']['identity']['name'].lower()!="":
-                        results.append(x)
+                        if x['public_key'] not in keys:
+                            keys.append(x['public_key'])
+                            x['source_indexer_key'] = source_indexer_key
+                            results.append(x)
             for z in x['data']['friends']:
                 if 'data' in z:
                     if 'identity' in z['data']:
                         if 'name' in z['data']['identity']:
                             if z['data']['identity']['name'].lower() in term.lower() or term.lower() in z['data']['identity']['name'].lower():
                                 if z['data']['identity']['name'].lower()!="":
-                                    results.append(z)
+                                    if z['public_key'] not in keys:
+                                        keys.append(z['public_key'])
+                                        results.append(z)
         return results
     def syncAllFriends(self):
         for x in self.nodeComm.node.get('data/friends'):
-            self.nodeComm.updateRelationship(Node(x))
+            try:
+                self.nodeComm.updateRelationship(Node(x))
+            except:
+                pass
+            print time.time()
+        reactor.callLater(60, self.syncAllFriends)
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
@@ -96,18 +108,33 @@ if __name__ == '__main__':
         exit()
     host = argSplit[0]
     port = argSplit[1]
-    try:
-        if sys.argv[3] == 'manager':
-            node1 = YadaServer({}, {"name" : "node 2"})
-        else:
-            node1 = Node({}, {"name" : "node 2"})
-    except:
-        node1 = Node({}, {"name" : "node 2"})
-    node1.addIPAddress(host, port)
+    connection = Connection('localhost',27021)
+    db = connection.yadaserver
+    manager = db.command(
+        {
+            "aggregate" : "identities", "pipeline" : [
+                {
+                    "$match" : {
+                        "data.identity.ip_address.address" : host,
+                        "data.identity.ip_address.port" : port,
+                        "data.type" : "manager"
+                    }
+                },
+            ]
+        })['result']
+    
+    if len(manager):
+        manager[0]['_id'] = str(manager[0]['_id'])
+        node1 = manager[0]
+        node1 = YadaServer(node1)
+    else:
+        node1 = YadaServer({}, {"name" : "node"})
+        node1.addIPAddress(host, port)
+        node1.save()
+        
     node1.save()
     nodeComm1 = NodeCommunicator(node1)
     tr = TestResource(nodeComm1, MongoApi(nodeComm1))
-    l = task.LoopingCall(tr.syncAllFriends)
-    l.start(60)
+    reactor.callInThread(tr.syncAllFriends)
     reactor.listenTCP(int(port), server.Site(tr))
     reactor.run()
