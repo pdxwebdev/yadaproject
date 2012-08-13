@@ -350,16 +350,18 @@ class MongoApi(object):
                             "$group" : {
                             "_id" : "$message.thread_id",
                             "friend_public_key" : {"$first" : "$public_key"},
-                             "guid" : {"$first" : "$message.guid"},
+                             "guid" : {"$last" : "$message.guid"},
                              "timestamp" : {"$last" : "$message.timestamp"},
-                             "public_key" : {"$first" : "$message.public_key"},
-                            "subject" : {"$first" : "$message.subject"},
-                            "name" : {"$first" : "$message.name"},
+                             "public_key" : {"$last" : "$message.public_key"},
+                            "subject" : {"$last" : "$message.subject"},
+                            "name" : {"$last" : "$message.name"},
                             }
                         },]
                     })
+        keys = [x['_id'] for x in finalPosts]
         for i, r in enumerate(posts['result']):
-            finalPosts.append(r)
+            if not r['_id'] in keys:
+                finalPosts.append(r)
         return {'threads':[{'thread_id': x['_id'], 'public_key' : x['public_key'], 'name' : x['name'], 'subject' : x['subject'], 'guid' : x['guid'], 'timestamp': float(x['timestamp'])} for i, x in enumerate(finalPosts)], 'requestType' : 'getThreads'}
         
     
