@@ -100,10 +100,8 @@ class MongoApi(object):
                             }
                         },
                         {
-                            "$project" : {
-                                "friend_requests" : "$friend_requests",
-                            }
-                        },
+                            "$unwind" : "$friend_requests"
+                         },
                         {
                             "$project" : {
                                           "public_keym" :"$public_key",
@@ -350,11 +348,11 @@ class MongoApi(object):
                             "$group" : {
                             "_id" : "$message.thread_id",
                             "friend_public_key" : {"$first" : "$public_key"},
-                             "guid" : {"$last" : "$message.guid"},
+                             "guid" : {"$first" : "$message.guid"},
                              "timestamp" : {"$last" : "$message.timestamp"},
-                             "public_key" : {"$last" : "$message.public_key"},
-                            "subject" : {"$last" : "$message.subject"},
-                            "name" : {"$last" : "$message.name"},
+                             "public_key" : {"$first" : "$message.public_key"},
+                            "subject" : {"$first" : "$message.subject"},
+                            "name" : {"$first" : "$message.name"},
                             }
                         },]
                     })
@@ -605,7 +603,7 @@ class MongoApi(object):
                 posts.append({'public_key' : request['request_public_key'], 'name' : request['name']})
                 
         for request in localFriendRequest:
-            if not request['request_public_key'] in ignoredRequests:
+            if 'request_public_key' in request and not request['request_public_key'] in ignoredRequests:
                 posts.append({'public_key' : request['request_public_key'], 'name' : request['name']})
                 
         return {'friend_requests':posts, 'requestType':'getFriendRequests'}
@@ -713,7 +711,7 @@ class MongoApi(object):
             message = b64decode(decrypted['message'])
         except:
             message = decrypted['message']
-        dataNodeComm.sendMessage(pub_keys=decrypted['public_key'], subject=decrypted['subject'], message=message, thread_id=decrypted['thread_id'])
+        dataNodeComm.sendMessage(pub_keys=decrypted['public_key'], subject=decrypted['subject'], message=message, thread_id=decrypted['thread_id'], guid=decrypted['guid'])
         
         """
         selectedFriends = {}
